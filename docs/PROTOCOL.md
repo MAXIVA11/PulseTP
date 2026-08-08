@@ -9,7 +9,7 @@ reimplement the protocol from scratch.
 
 PulseTP runs directly over UDP. UDP is chosen specifically because it does
 not buffer, coalesce, retransmit, or reorder packets the way a TCP stack
-does — all of which would corrupt inter-packet timing before it ever
+does, all of which would corrupt inter-packet timing before it ever
 reached the application. PulseTP has no notion of a connection: a sender
 simply fires pulses at a destination `host:port`, and a listener decodes
 whatever arrives at a bound port.
@@ -21,12 +21,12 @@ message content.
 
 | Offset | Size | Field    | Description                                   |
 |-------:|-----:|----------|------------------------------------------------|
-| 0      | 2    | Magic    | ASCII `"PT"` — identifies a PulseTP pulse       |
+| 0      | 2    | Magic    | ASCII `"PT"`, identifies a PulseTP pulse       |
 | 2      | 1    | Version  | Protocol version, currently `1`                |
 | 3      | 4    | Seq      | Sequence number, big-endian `uint32`, starts at 0 |
 | 7      | 8    | SentAt   | Send timestamp, big-endian `int64`, Unix nanoseconds |
 
-`Seq` and `SentAt` are diagnostic only — they let a receiver detect dropped
+`Seq` and `SentAt` are diagnostic only: they let a receiver detect dropped
 packets and measure clock skew, but **no bit of the message is ever encoded
 in packet contents.** The entire signal is the wall-clock gap between one
 pulse's arrival and the next.
@@ -36,11 +36,11 @@ pulse's arrival and the next.
 Let `gap` be the time elapsed between the arrival of pulse `n-1` and pulse
 `n`. A sender transmits two nominal gap durations:
 
-- **short gap** (default `40ms`) — encodes bit `0`
-- **long gap** (default `160ms`) — encodes bit `1`
+- **short gap** (default `40ms`), encodes bit `0`
+- **long gap** (default `160ms`), encodes bit `1`
 
 A receiver decides each bit by comparing the observed gap to a calibrated
-**threshold** `X` (default hint `100ms`, but see §4 — the real threshold
+**threshold** `X` (default hint `100ms`, but see §4, the real threshold
 is always calibrated, never hardcoded):
 
 ```
@@ -60,7 +60,7 @@ transmission are a fixed, receiver-known pattern:
 0 1 0 1 0 1 0 1
 ```
 
-sent at the sender's nominal short/long gap durations — exactly like a
+sent at the sender's nominal short/long gap durations, exactly like a
 modem or radio handshake tone. The receiver knows this pattern in advance,
 so it can measure the *actual* gap durations that arrived for each known 0
 and each known 1, independent of whatever jitter, latency, or clock drift
@@ -68,15 +68,15 @@ the real network introduces.
 
 From those eight measured gaps the receiver computes:
 
-- `avgShort` — mean of the four gaps known to encode `0`
-- `avgLong` — mean of the four gaps known to encode `1`
+- `avgShort`: mean of the four gaps known to encode `0`
+- `avgLong`: mean of the four gaps known to encode `1`
 - `threshold = (avgShort + avgLong) / 2`
 - `tolerance = |avgLong - avgShort| / 4`, floored at `1ms`
 
 `threshold` replaces the hardcoded hint for the rest of the session.
 `tolerance` defines a window around the threshold inside which a decoded
-bit is flagged **low-confidence** (still decoded — a decision is always
-made — but visually distinguishable to the operator, e.g. in the CLI's
+bit is flagged **low-confidence** (still decoded, a decision is always
+made, but visually distinguishable to the operator, e.g. in the CLI's
 live rhythm view).
 
 Only after all 8 preamble bits have been observed does the receiver
@@ -94,7 +94,7 @@ There is no length field and no explicit terminator packet. Instead:
   declares the message complete and finalizes whatever bytes it has
   assembled so far.
 
-This mirrors how a person tapping out Morse code signals "I'm done" —
+This mirrors how a person tapping out Morse code signals "I'm done":
 by going quiet, not by sending a special "stop" symbol.
 
 ## 6. Receiver state machine
@@ -111,7 +111,7 @@ WAITING ────────────────────▶ PREAMBLE
 ```
 
 A receiver in any state that sees `EndSilence` elapse immediately finalizes
-and stops — including mid-preamble, which simply yields an empty message.
+and stops, including mid-preamble, which simply yields an empty message.
 
 ## 7. Configuration parameters
 
@@ -138,7 +138,7 @@ first) and is otherwise cosmetic.
   tracked as a stretch goal.
 - **Timing precision is bounded by the OS scheduler and Go's runtime
   timer**, not by PulseTP itself. On a loaded machine, `time.After` and
-  `ReadFromUDP` wake-ups can jitter by several milliseconds — this is
+  `ReadFromUDP` wake-ups can jitter by several milliseconds; this is
   exactly why calibration (§4) exists instead of a hardcoded threshold.
 - **The protocol has no encryption, authentication, or replay protection.**
   Anyone who can inject UDP packets with correct spacing to the destination
