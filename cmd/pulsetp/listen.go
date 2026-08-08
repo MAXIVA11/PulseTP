@@ -21,13 +21,15 @@ func newListenCmd() *cobra.Command {
 		timeout    time.Duration
 		plain      bool
 		output     string
+		key        string
 	)
 
 	cmd := &cobra.Command{
 		Use:   "listen",
 		Short: "Listen for an incoming pulse train and decode it",
 		Example: `  pulsetp listen --port 9000
-  pulsetp listen --port 9000 --output ./received.png`,
+  pulsetp listen --port 9000 --output ./received.png
+  pulsetp listen --port 9000 --key "correct horse battery staple"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pulsetp.DefaultConfig()
 			cfg.Threshold = threshold
@@ -48,10 +50,14 @@ func newListenCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 			defer stop()
 
-			if plain || !isatty.IsTerminal(os.Stdout.Fd()) {
-				return runListenPlain(ctx, l, port, output)
+			if key == "" {
+				key = os.Getenv("PULSETP_KEY")
 			}
-			return runListenTUI(ctx, l, port, output)
+
+			if plain || !isatty.IsTerminal(os.Stdout.Fd()) {
+				return runListenPlain(ctx, l, port, output, key)
+			}
+			return runListenTUI(ctx, l, port, output, key)
 		},
 	}
 
@@ -61,11 +67,12 @@ func newListenCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "give up if no pulses arrive within this long (0 = wait forever)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "disable the live TUI, print plain text as pulses decode")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "save the decoded bytes to this file instead of printing them as text (for receiving files)")
+	cmd.Flags().StringVarP(&key, "key", "k", "", "decrypt received data with this passphrase (must match the sender's --key); can also be set via PULSETP_KEY")
 
 	return cmd
 }
 
-func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int, output string) error {
+func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int, output, key string) error {
 	fmt.Println(labelStyle.Render("listening  ") + valueStyle.Render(fmt.Sprintf("udp/%d", port)))
 	fmt.Println(dimStyle.Render("waiting for pulses... (ctrl+c to stop)"))
 	fmt.Println()
@@ -94,6 +101,16 @@ func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int, output s
 				fmt.Println(errorStyle.Render("✗ no message decoded (silence before any data arrived)"))
 				return nil
 			}
+			decoded := ev.Message
+			if key != "" {
+				plain, err := pulsetp.Decrypt(key, decoded)
+				if err != nil {
+					fmt.Println(errorStyle.Render("✗ " + err.Error()))
+					return nil
+				}
+				decoded = plain
+			}
+			ev.Message = decoded
 			elapsed := labelStyle.Render(fmt.Sprintf("  in %s", time.Since(start).Round(time.Millisecond)))
 			if output != "" {
 				if err := os.WriteFile(output, ev.Message, 0o644); err != nil {

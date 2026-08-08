@@ -41,7 +41,9 @@ type listenModel struct {
 
 	message    []byte
 	outputPath string
+	key        string
 	saveErr    error
+	decryptErr error
 	lastErr    error
 
 	start time.Time
@@ -49,7 +51,7 @@ type listenModel struct {
 	quit  bool
 }
 
-func newListenModel(ctx context.Context, l *pulsetp.Listener, port int, outputPath string) (listenModel, context.Context) {
+func newListenModel(ctx context.Context, l *pulsetp.Listener, port int, outputPath, key string) (listenModel, context.Context) {
 	runCtx, cancel := context.WithCancel(ctx)
 	sp := spinner.New()
 	sp.Spinner = spinner.Points
@@ -61,6 +63,7 @@ func newListenModel(ctx context.Context, l *pulsetp.Listener, port int, outputPa
 		spinner:    sp,
 		phase:      pulsetp.PhaseWaiting,
 		outputPath: outputPath,
+		key:        key,
 		start:      time.Now(),
 	}, runCtx
 }
@@ -98,10 +101,20 @@ func (m listenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pulsetp.EventError:
 			m.lastErr = ev.Err
 		case pulsetp.EventMessage:
-			m.message = ev.Message
+			decoded := ev.Message
+			if m.key != "" && len(decoded) > 0 {
+				plain, err := pulsetp.Decrypt(m.key, decoded)
+				if err != nil {
+					m.decryptErr = err
+					decoded = nil
+				} else {
+					decoded = plain
+				}
+			}
+			m.message = decoded
 			m.done = true
-			if m.outputPath != "" && len(ev.Message) > 0 {
-				m.saveErr = os.WriteFile(m.outputPath, ev.Message, 0o644)
+			if m.outputPath != "" && len(m.message) > 0 {
+				m.saveErr = os.WriteFile(m.outputPath, m.message, 0o644)
 			}
 			m.cancel()
 			return m, tea.Quit
@@ -162,7 +175,11 @@ func (m listenModel) View() string {
 	fmt.Fprintln(&b, strings.Join(m.glyphs, " "))
 	b.WriteString("\n")
 
-	if m.outputPath != "" {
+	switch {
+	case m.decryptErr != nil:
+		fmt.Fprintln(&b, labelStyle.Render("decoded"))
+		fmt.Fprintln(&b, panelStyle.Render(errorStyle.Render(m.decryptErr.Error())))
+	case m.outputPath != "":
 		fmt.Fprintln(&b, labelStyle.Render("file"))
 		var content string
 		switch {
@@ -176,7 +193,7 @@ func (m listenModel) View() string {
 			content = valueStyle.Render(fmt.Sprintf("%s received", humanBytes(len(m.message)))) + dimStyle.Render("▌")
 		}
 		fmt.Fprintln(&b, panelStyle.Render(content))
-	} else {
+	default:
 		fmt.Fprintln(&b, labelStyle.Render("decoded"))
 		content := string(m.message)
 		if content == "" {
@@ -214,8 +231,8 @@ func (m listenModel) statusLine() string {
 	}
 }
 
-func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int, outputPath string) error {
-	model, _ := newListenModel(ctx, l, port, outputPath)
+func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int, outputPath, key string) error {
+	model, _ := newListenModel(ctx, l, port, outputPath, key)
 	p := tea.NewProgram(model)
 	final, err := p.Run()
 	if err != nil {
@@ -225,6 +242,9 @@ func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int, outputPath
 	m := final.(listenModel)
 	if m.quit && !m.done {
 		return fmt.Errorf("stopped before a message completed")
+	}
+	if m.decryptErr != nil {
+		return m.decryptErr
 	}
 	if m.done && len(m.message) == 0 {
 		return fmt.Errorf("no message decoded (silence before any data arrived)")

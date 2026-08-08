@@ -16,6 +16,7 @@ func newSendCmd() *cobra.Command {
 		to       string
 		message  string
 		file     string
+		key      string
 		shortGap time.Duration
 		longGap  time.Duration
 		plain    bool
@@ -25,7 +26,8 @@ func newSendCmd() *cobra.Command {
 		Use:   "send",
 		Short: "Send a message or a file as a rhythm of UDP pulses",
 		Example: `  pulsetp send --to localhost:9000 --message "hello"
-  pulsetp send --to localhost:9000 --file ./photo.png`,
+  pulsetp send --to localhost:9000 --file ./photo.png
+  pulsetp send --to localhost:9000 --message "secret" --key "correct horse battery staple"`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if message != "" && file != "" {
 				return fmt.Errorf("--message and --file are mutually exclusive, pick one")
@@ -51,6 +53,17 @@ func newSendCmd() *cobra.Command {
 				label = fmt.Sprintf("%q", message)
 			}
 
+			if key == "" {
+				key = os.Getenv("PULSETP_KEY")
+			}
+			if key != "" {
+				encrypted, err := pulsetp.Encrypt(key, payload)
+				if err != nil {
+					return fmt.Errorf("could not encrypt payload: %w", err)
+				}
+				payload = encrypted
+			}
+
 			cfg := pulsetp.DefaultConfig()
 			cfg.ShortGap = shortGap
 			cfg.LongGap = longGap
@@ -72,6 +85,9 @@ func newSendCmd() *cobra.Command {
 				bitOneStyle.Render(fmt.Sprintf("1=%s", longGap)))
 			fmt.Println(labelStyle.Render("pulses     ") + valueStyle.Render(fmt.Sprintf("%d", totalBits+1)))
 			fmt.Println(labelStyle.Render("estimated  ") + dimStyle.Render(fmt.Sprintf("~%s", estimate.Round(time.Millisecond*100))))
+			if key != "" {
+				fmt.Println(labelStyle.Render("encrypted  ") + successStyle.Render("✓ AES-256-GCM"))
+			}
 			fmt.Println()
 
 			if !plain {
@@ -111,6 +127,7 @@ func newSendCmd() *cobra.Command {
 	cmd.Flags().StringVar(&to, "to", "localhost:9000", "destination address (host:port)")
 	cmd.Flags().StringVarP(&message, "message", "m", "", `message to send, e.g. --message "hello"`)
 	cmd.Flags().StringVarP(&file, "file", "f", "", "path to a file to send instead of a text message")
+	cmd.Flags().StringVarP(&key, "key", "k", "", "encrypt the payload with this passphrase (AES-256-GCM); can also be set via PULSETP_KEY. Warning: passing it directly may leave it in your shell history")
 	cmd.Flags().DurationVar(&shortGap, "short", 40*time.Millisecond, "nominal gap encoding bit 0")
 	cmd.Flags().DurationVar(&longGap, "long", 160*time.Millisecond, "nominal gap encoding bit 1")
 	cmd.Flags().BoolVar(&plain, "plain", false, "disable live rhythm output, print a plain summary")

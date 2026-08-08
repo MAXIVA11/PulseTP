@@ -4,7 +4,7 @@
 
   **Packets carry no data. The silence between them does.**
 
-  ![Go >=1.21](https://img.shields.io/badge/Go-%3E%3D1.21-00ADD8?style=flat-square)
+  ![Go >=1.24](https://img.shields.io/badge/Go-%3E%3D1.24-00ADD8?style=flat-square)
   ![Transport: UDP](https://img.shields.io/badge/Transport-UDP-ff9a5e?style=flat-square)
   ![Encoding: Timing](https://img.shields.io/badge/Encoding-Timing%2C_not_payload-7c9eff?style=flat-square)
   ![License: MIT](https://img.shields.io/badge/License-MIT-8790b3?style=flat-square)
@@ -46,6 +46,11 @@ taps the message back out.
 - **Files work too**: `--file` on `send` and `--output` on `listen` transmit
   and save raw bytes instead of text, at exactly the same (deliberately
   slow) bits-per-second as everything else.
+- **Optional encryption**: by default anyone watching the timing can
+  decode a message as easily as the real receiver, `--key` on both ends
+  (AES-256-GCM, scrypt-derived) fixes that. See
+  [`docs/PROTOCOL.md`](docs/PROTOCOL.md#9-optional-payload-encryption) for
+  exactly what it does and doesn't protect against.
 
 ### 🚀 Get it running
 
