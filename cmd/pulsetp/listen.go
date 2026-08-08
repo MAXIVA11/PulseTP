@@ -1,0 +1,120 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"time"
+
+	"github.com/mattn/go-isatty"
+	"github.com/spf13/cobra"
+
+	"github.com/MAXIVA11/PulseTP/pulsetp"
+)
+
+func newListenCmd() *cobra.Command {
+	var (
+		port       int
+		threshold  time.Duration
+		endSilence time.Duration
+		timeout    time.Duration
+		plain      bool
+	)
+
+	cmd := &cobra.Command{
+		Use:     "listen",
+		Short:   "Listen for an incoming pulse train and decode it",
+		Example: `  pulsetp listen --port 9000`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := pulsetp.DefaultConfig()
+			cfg.Threshold = threshold
+			cfg.EndSilence = endSilence
+
+			l, err := pulsetp.Listen(cfg, port)
+			if err != nil {
+				return fmt.Errorf("could not start listening: %w", err)
+			}
+			defer l.Close()
+
+			ctx := cmd.Context()
+			if timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, timeout)
+				defer cancel()
+			}
+			ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
+			defer stop()
+
+			if plain || !isatty.IsTerminal(os.Stdout.Fd()) {
+				return runListenPlain(ctx, l, port)
+			}
+			return runListenTUI(ctx, l, port)
+		},
+	}
+
+	cmd.Flags().IntVar(&port, "port", 9000, "UDP port to listen on")
+	cmd.Flags().DurationVar(&threshold, "threshold", 100*time.Millisecond, "fallback 0/1 threshold, used only until the preamble calibrates it")
+	cmd.Flags().DurationVar(&endSilence, "end-silence", 2*time.Second, "silence duration that marks end-of-message")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "give up if no pulses arrive within this long (0 = wait forever)")
+	cmd.Flags().BoolVar(&plain, "plain", false, "disable the live TUI, print plain text as pulses decode")
+
+	return cmd
+}
+
+func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int) error {
+	fmt.Println(labelStyle.Render("listening  ") + valueStyle.Render(fmt.Sprintf("udp/%d", port)))
+	fmt.Println(dimStyle.Render("waiting for pulses... (ctrl+c to stop)"))
+	fmt.Println()
+
+	start := time.Now()
+	for ev := range l.Run(ctx) {
+		switch ev.Kind {
+		case pulsetp.EventPulse:
+			printPulsePlain(ev.Pulse)
+		case pulsetp.EventCalibrated:
+			fmt.Println()
+			c := ev.Calibration
+			fmt.Println(dimStyle.Render(fmt.Sprintf(
+				"  calibrated: short≈%s long≈%s threshold=%s tolerance=±%s",
+				c.AvgShort.Round(time.Millisecond), c.AvgLong.Round(time.Millisecond),
+				c.Threshold.Round(time.Millisecond), c.Tolerance.Round(time.Millisecond))))
+			fmt.Print(labelStyle.Render("data       "))
+		case pulsetp.EventByte:
+			// pulse printing already shows bits; nothing extra needed here.
+		case pulsetp.EventError:
+			fmt.Fprintln(os.Stderr, "\n"+errorStyle.Render("! ")+ev.Err.Error())
+		case pulsetp.EventMessage:
+			fmt.Println()
+			fmt.Println()
+			if len(ev.Message) == 0 {
+				fmt.Println(errorStyle.Render("✗ no message decoded (silence before any data arrived)"))
+				return nil
+			}
+			fmt.Println(successStyle.Render("✓ message received") +
+				labelStyle.Render(fmt.Sprintf("  in %s", time.Since(start).Round(time.Millisecond))))
+			fmt.Println(panelStyle.Render(valueStyle.Render(string(ev.Message))))
+			return nil
+		}
+	}
+
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("stopped before a message completed: %w", err)
+	}
+	return nil
+}
+
+func printPulsePlain(p pulsetp.PulseInfo) {
+	switch {
+	case p.Index == 0:
+		fmt.Print(dimStyle.Render("● "))
+	case p.Phase == pulsetp.PhasePreamble:
+		fmt.Print(dimStyle.Render("┆ "))
+	case !p.HasBit:
+		fmt.Print(dimStyle.Render("· "))
+	case p.Bit == 0:
+		fmt.Print(bitZeroStyle.Render("▪ "))
+	default:
+		fmt.Print(bitOneStyle.Render("▮ "))
+	}
+}
