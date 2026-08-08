@@ -23,7 +23,7 @@ means the other. The receiver listens to the rhythm, not the payload, and
 taps the message back out.
 
 <p align="center">
-  <img src="docs/demo.gif" width="720" alt="PulseTP demo: pulsetp listen calibrating against the preamble, then decoding a live rhythm of cyan and pink pulses into the message 'hello'" />
+  <img src="docs/demo.gif" width="900" alt="PulseTP demo: pulsetp listen calibrating against the preamble, then decoding a live rhythm of cyan and pink pulses into the message 'This is PulseTP'" />
 </p>
 
 ### 🎼 What's inside
