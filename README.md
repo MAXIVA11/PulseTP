@@ -68,14 +68,15 @@ Watch the rhythm arrive, and the message appear.
 
 ### 🔍 Don't take our word for it
 
-Here's an actual packet from a real run, pulled straight off the wire with
-`tshark`. The message sent was `"This is PulseTP"` — see if you can find it:
+Real capture, real Wireshark: 129 packets of `"This is PulseTP"` on the
+left, and what `Follow UDP Stream` sees when it tries to reassemble them
+into a message on the right.
 
 <p align="center">
-  <img src="docs/evidence.png" width="700" alt="Hex dump of a captured PulseTP packet: only a magic tag, sequence number, and timestamp, no trace of the message" />
+  <img src="docs/wireshark-follow-stream.png" width="900" alt="Wireshark showing captured PulseTP packets on the left and the Follow UDP Stream panel on the right, containing nothing but repeating 'PT' magic bytes and noise, no trace of the message" />
 </p>
 
-It isn't in there. It was never going to be.
+Just noise and a repeating "PT" tag. The message was never in the packets.
 
 ### 🧠 Curious how the timing actually works?
 
