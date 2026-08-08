@@ -66,6 +66,17 @@ bin\pulsetp.exe send --to localhost:9000 --message "hello"
 
 Watch the rhythm arrive, and the message appear.
 
+### 🔍 Don't take our word for it
+
+Here's an actual packet from a real run, pulled straight off the wire with
+`tshark`. The message sent was `"This is PulseTP"` — see if you can find it:
+
+<p align="center">
+  <img src="docs/evidence.png" width="700" alt="Hex dump of a captured PulseTP packet: only a magic tag, sequence number, and timestamp, no trace of the message" />
+</p>
+
+It isn't in there. It was never going to be.
+
 ### 🧠 Curious how the timing actually works?
 
 The full wire format, calibration math, and receiver state machine, the
