@@ -127,20 +127,25 @@ and stops, including mid-preamble, which simply yields an empty message.
 | `Threshold`    | 100ms   | Fallback 0/1 boundary, used only before calibration completes |
 | `EndSilence`   | 2s      | Silence duration that marks end-of-message         |
 | `PreambleBits` | `01010101` | Known calibration pattern sent before real data |
+| `Repeat`       | 1       | How many consecutive gaps encode each data bit (§10) |
 
-Sender and receiver must agree on `ShortGap`/`LongGap`/`PreambleBits` for
-calibration to converge cleanly; `Threshold` only matters if the message is
-shorter than the preamble (i.e., never, since the preamble always completes
-first) and is otherwise cosmetic.
+Sender and receiver must agree on `ShortGap`/`LongGap`/`PreambleBits`/`Repeat`
+for calibration and decoding to converge cleanly; `Threshold` only matters if
+the message is shorter than the preamble (i.e., never, since the preamble
+always completes first) and is otherwise cosmetic.
 
 ## 8. Design notes and known limitations
 
-- **No packet-loss recovery in v1.** If a pulse is dropped, every gap
-  measured from that point on is doubled (or worse), which reads as a
-  spurious `1` bit and desynchronizes byte alignment for the rest of the
-  message. Repeat-and-majority-vote coding (transmitting each bit as an odd
-  number of pulses and taking the majority) is the natural next step and is
-  tracked as a stretch goal.
+- **No recovery from an actually dropped UDP packet.** If a pulse never
+  arrives, the gap measured across it is roughly double what it should be,
+  which reads as a spurious `1` and, worse, permanently shifts bit
+  alignment for the rest of the message (one fewer pulse arrived than the
+  receiver is counting on). §10's repetition coding does not fix this
+  case; nothing currently does.
+- **Jitter-induced misclassification is fixed by §10.** A single gap that
+  lands on the wrong side of the threshold purely from OS/network timing
+  noise (not an actual dropped packet) used to silently corrupt one bit.
+  `--repeat` now catches this via majority vote.
 - **Timing precision is bounded by the OS scheduler and Go's runtime
   timer**, not by PulseTP itself. On a loaded machine, `time.After` and
   `ReadFromUDP` wake-ups can jitter by several milliseconds; this is
@@ -185,3 +190,34 @@ What this does and doesn't buy you:
   train, re-sent later by an eavesdropper with correct timing, decrypts
   successfully again. GCM authenticates the ciphertext against the key,
   not the freshness of the session.
+
+## 10. Optional repetition coding (majority vote)
+
+`send --repeat N` / `listen --repeat N` (both sides must agree on `N`, an
+odd number, default 1 meaning disabled) trade throughput for tolerance to
+jitter-induced misclassification, without changing the wire format: it's
+still one pulse per gap, just more of them.
+
+- **Sender**: each *data* bit (the preamble is unaffected, it's still
+  always exactly 8 pulses) is transmitted as `N` consecutive gaps of the
+  same duration, `ShortGap` repeated `N` times for a `0`, `LongGap`
+  repeated `N` times for a `1`. Total data pulses become
+  `len(payload) * 8 * N` instead of `len(payload) * 8`.
+- **Receiver**: classifies every gap individually exactly as in §3 (each
+  one still gets its own `EventPulse` with its own bit/confidence, so a
+  live view shows the raw, possibly-noisy stream), then buffers `N`
+  classifications per logical bit and takes a majority vote
+  (`ones*2 > N`) to decide the actual bit that goes into the message.
+  Because `N` is odd, a vote never ties.
+- **What it fixes**: an occasional single gap landing on the wrong side of
+  the threshold purely from timing noise, e.g. `N=3` survives any one bad
+  sample per bit; `N=5` survives any two.
+- **What it doesn't fix**: an actually dropped UDP packet. Losing a pulse
+  merges two gaps into one observed gap and permanently shifts alignment
+  for everything after it (§8), no amount of repetition recovers from a
+  pulse that never arrived, because the receiver has no way to know one
+  is missing from a repeat group versus not having started one yet.
+- **Cost**: linear in `N`. `--repeat 5` takes 5x as long to transmit the
+  same message as `--repeat 1`; combined with encryption's fixed 44-byte
+  overhead, short messages get slow fast. `send` always prints the
+  resulting pulse count and estimated duration up front.

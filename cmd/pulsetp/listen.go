@@ -22,6 +22,7 @@ func newListenCmd() *cobra.Command {
 		plain      bool
 		output     string
 		key        string
+		repeat     int
 	)
 
 	cmd := &cobra.Command{
@@ -29,11 +30,17 @@ func newListenCmd() *cobra.Command {
 		Short: "Listen for an incoming pulse train and decode it",
 		Example: `  pulsetp listen --port 9000
   pulsetp listen --port 9000 --output ./received.png
-  pulsetp listen --port 9000 --key "correct horse battery staple"`,
+  pulsetp listen --port 9000 --key "correct horse battery staple"
+  pulsetp listen --port 9000 --repeat 3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if repeat < 1 || repeat%2 == 0 {
+				return fmt.Errorf("--repeat must be an odd number >= 1 so a majority vote never ties (got %d)", repeat)
+			}
+
 			cfg := pulsetp.DefaultConfig()
 			cfg.Threshold = threshold
 			cfg.EndSilence = endSilence
+			cfg.Repeat = repeat
 
 			l, err := pulsetp.Listen(cfg, port)
 			if err != nil {
@@ -68,6 +75,7 @@ func newListenCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&plain, "plain", false, "disable the live TUI, print plain text as pulses decode")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "save the decoded bytes to this file instead of printing them as text (for receiving files)")
 	cmd.Flags().StringVarP(&key, "key", "k", "", "decrypt received data with this passphrase (must match the sender's --key); can also be set via PULSETP_KEY")
+	cmd.Flags().IntVar(&repeat, "repeat", 1, "expect each data bit repeated this many times (must be odd); must match the sender's --repeat")
 
 	return cmd
 }

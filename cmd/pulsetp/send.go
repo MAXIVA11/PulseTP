@@ -19,6 +19,7 @@ func newSendCmd() *cobra.Command {
 		key      string
 		shortGap time.Duration
 		longGap  time.Duration
+		repeat   int
 		plain    bool
 	)
 
@@ -27,7 +28,8 @@ func newSendCmd() *cobra.Command {
 		Short: "Send a message or a file as a rhythm of UDP pulses",
 		Example: `  pulsetp send --to localhost:9000 --message "hello"
   pulsetp send --to localhost:9000 --file ./photo.png
-  pulsetp send --to localhost:9000 --message "secret" --key "correct horse battery staple"`,
+  pulsetp send --to localhost:9000 --message "secret" --key "correct horse battery staple"
+  pulsetp send --to localhost:9000 --message "hello" --repeat 3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if message != "" && file != "" {
 				return fmt.Errorf("--message and --file are mutually exclusive, pick one")
@@ -37,6 +39,9 @@ func newSendCmd() *cobra.Command {
 			}
 			if shortGap <= 0 || longGap <= shortGap {
 				return fmt.Errorf("--long must be greater than --short (got short=%s long=%s)", shortGap, longGap)
+			}
+			if repeat < 1 || repeat%2 == 0 {
+				return fmt.Errorf("--repeat must be an odd number >= 1 so a majority vote never ties (got %d)", repeat)
 			}
 
 			var payload []byte
@@ -68,8 +73,9 @@ func newSendCmd() *cobra.Command {
 			cfg.ShortGap = shortGap
 			cfg.LongGap = longGap
 			cfg.Threshold = (shortGap + longGap) / 2
+			cfg.Repeat = repeat
 
-			totalBits := len(cfg.PreambleBits) + len(payload)*8
+			totalBits := len(cfg.PreambleBits) + len(payload)*8*repeat
 			avgGap := (shortGap + longGap) / 2
 			estimate := time.Duration(totalBits) * avgGap
 
@@ -87,6 +93,9 @@ func newSendCmd() *cobra.Command {
 			fmt.Println(labelStyle.Render("estimated  ") + dimStyle.Render(fmt.Sprintf("~%s", estimate.Round(time.Millisecond*100))))
 			if key != "" {
 				fmt.Println(labelStyle.Render("encrypted  ") + successStyle.Render("✓ AES-256-GCM"))
+			}
+			if repeat > 1 {
+				fmt.Println(labelStyle.Render("repeat     ") + dimStyle.Render(fmt.Sprintf("%dx per bit (majority vote)", repeat)))
 			}
 			fmt.Println()
 
@@ -130,6 +139,7 @@ func newSendCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&key, "key", "k", "", "encrypt the payload with this passphrase (AES-256-GCM); can also be set via PULSETP_KEY. Warning: passing it directly may leave it in your shell history")
 	cmd.Flags().DurationVar(&shortGap, "short", 40*time.Millisecond, "nominal gap encoding bit 0")
 	cmd.Flags().DurationVar(&longGap, "long", 160*time.Millisecond, "nominal gap encoding bit 1")
+	cmd.Flags().IntVar(&repeat, "repeat", 1, "send each data bit this many times (must be odd); listen --repeat must match")
 	cmd.Flags().BoolVar(&plain, "plain", false, "disable live rhythm output, print a plain summary")
 
 	return cmd

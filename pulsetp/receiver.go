@@ -93,6 +93,12 @@ func (l *Listener) run(ctx context.Context, events chan<- Event) {
 	haveLast := false
 	pulseIndex := 0
 
+	repeat := l.Config.Repeat
+	if repeat < 1 {
+		repeat = 1
+	}
+
+	var voteBuf []int
 	var bitBuf []int
 	var message []byte
 
@@ -164,13 +170,20 @@ func (l *Listener) run(ctx context.Context, events chan<- Event) {
 			}
 
 			bit, confident := Classify(gap, threshold, tolerance)
-			bitBuf = append(bitBuf, bit)
 			events <- Event{Kind: EventPulse, Pulse: PulseInfo{
 				Seq: p.Seq, Index: pulseIndex, Arrival: pkt.at,
 				Gap: gap, HasGap: true, Bit: bit, HasBit: true,
 				Confident: confident, Phase: PhaseData, Threshold: threshold,
 			}}
 			pulseIndex++
+
+			voteBuf = append(voteBuf, bit)
+			if len(voteBuf) < repeat {
+				continue
+			}
+			decoded := majorityVote(voteBuf)
+			voteBuf = voteBuf[:0]
+			bitBuf = append(bitBuf, decoded)
 
 			if len(bitBuf) == 8 {
 				b := BitsToByte(bitBuf)

@@ -51,6 +51,10 @@ taps the message back out.
   (AES-256-GCM, scrypt-derived) fixes that. See
   [`docs/PROTOCOL.md`](docs/PROTOCOL.md#9-optional-payload-encryption) for
   exactly what it does and doesn't protect against.
+- **Optional repetition coding**: `--repeat N` (odd, both ends must match)
+  sends each data bit as `N` gaps instead of one, and the receiver takes a
+  majority vote, tolerating an occasional jitter-induced misclassification
+  at the cost of a slower transfer.
 
 ### 🚀 Get it running
 

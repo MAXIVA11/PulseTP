@@ -35,9 +35,18 @@ func Send(ctx context.Context, addr string, message []byte, cfg Config, onPulse 
 	}
 	defer conn.Close()
 
-	bits := make([]int, 0, len(cfg.PreambleBits)+len(message)*8)
+	repeat := cfg.Repeat
+	if repeat < 1 {
+		repeat = 1
+	}
+
+	bits := make([]int, 0, len(cfg.PreambleBits)+len(message)*8*repeat)
 	bits = append(bits, cfg.PreambleBits...)
-	bits = append(bits, BytesToBits(message)...)
+	for _, bit := range BytesToBits(message) {
+		for i := 0; i < repeat; i++ {
+			bits = append(bits, bit)
+		}
+	}
 
 	var seq uint32
 	write := func() (time.Time, error) {

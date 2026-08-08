@@ -102,3 +102,20 @@ func Classify(gap, threshold, tolerance time.Duration) (bit int, confident bool)
 	confident = diff >= tolerance
 	return bit, confident
 }
+
+// majorityVote resolves repeated per-gap classifications of the same
+// logical bit into a single value: whichever of 0/1 appears more often
+// wins. Callers are expected to pass an odd-length slice (Config.Repeat)
+// so there's always a clear winner; an even-length tie falls back to 0.
+func majorityVote(votes []int) int {
+	ones := 0
+	for _, v := range votes {
+		if v == 1 {
+			ones++
+		}
+	}
+	if ones*2 > len(votes) {
+		return 1
+	}
+	return 0
+}
