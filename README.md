@@ -22,6 +22,10 @@ between one packet and the next: a short gap means one bit, a long gap
 means the other. The receiver listens to the rhythm, not the payload, and
 taps the message back out.
 
+<p align="center">
+  <img src="docs/demo.gif" width="720" alt="PulseTP demo: pulsetp listen calibrating against the preamble, then decoding a live rhythm of cyan and pink pulses into the message 'hello'" />
+</p>
+
 ### 🎼 What's inside
 
 - **Rhythm is the payload**, gaps between packets encode bits, not packet
