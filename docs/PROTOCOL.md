@@ -145,7 +145,43 @@ first) and is otherwise cosmetic.
   timer**, not by PulseTP itself. On a loaded machine, `time.After` and
   `ReadFromUDP` wake-ups can jitter by several milliseconds; this is
   exactly why calibration (§4) exists instead of a hardcoded threshold.
-- **The protocol has no encryption, authentication, or replay protection.**
-  Anyone who can inject UDP packets with correct spacing to the destination
-  port can forge a message. PulseTP is a timing experiment, not a security
-  protocol.
+- **The core protocol has no encryption, authentication, or replay
+  protection.** The preamble, calibration math, and bit threshold are all
+  public, so anyone who can observe the packets (not just the intended
+  receiver) can decode the message exactly the same way, just from
+  arrival timestamps, no access to PulseTP's code required. Anyone who
+  can inject UDP packets with correct spacing to the destination port can
+  also forge a message. See §9 for the optional application-layer fix for
+  confidentiality.
+
+## 9. Optional payload encryption
+
+`send --key` / `listen --key` (or the `PULSETP_KEY` environment variable)
+add confidentiality on top of the core protocol, without changing the wire
+format at all: the encrypted bytes are just another opaque payload, exactly
+like a plaintext message or a file.
+
+- **Key derivation**: `scrypt(passphrase, salt, N=32768, r=8, p=1, 32)`
+  produces a 256-bit key from the passphrase. A fresh random 16-byte salt
+  is generated per message.
+- **Encryption**: AES-256-GCM with a fresh random 12-byte nonce per
+  message. The payload that actually goes over the wire is
+  `salt || nonce || ciphertext`, GCM's authentication tag is part of the
+  ciphertext.
+- **Failure mode**: a wrong passphrase, or any corruption/truncation in
+  transit, fails GCM authentication and returns an error. It never
+  silently produces garbage plaintext.
+
+What this does and doesn't buy you:
+
+- It hides the *content* of the message from anyone without the
+  passphrase, an eavesdropper still recovers a byte-identical ciphertext
+  from the timing (per §8's threat model above), but can't read it.
+- It does **not** hide that a transmission happened, its timing pattern,
+  or its length. Traffic analysis (someone is talking, roughly how much,
+  for how long) is still fully exposed, same as any protocol without
+  padding or cover traffic.
+- It has no replay protection at the application layer: a captured pulse
+  train, re-sent later by an eavesdropper with correct timing, decrypts
+  successfully again. GCM authenticates the ciphertext against the key,
+  not the freshness of the session.
