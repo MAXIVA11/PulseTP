@@ -5,6 +5,11 @@ between packets, not their contents. This document specifies the wire
 format, timing rules, and receiver state machine precisely enough to
 reimplement the protocol from scratch.
 
+The payload is an arbitrary byte sequence: the CLI's `send`/`listen`
+commands use it for both text messages and raw files (`--file`/`--output`).
+Nothing in §3 or §4 cares what the bytes mean, only how many gaps it takes
+to send them.
+
 ## 1. Transport
 
 PulseTP runs directly over UDP. UDP is chosen specifically because it does

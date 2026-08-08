@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -38,26 +39,29 @@ type listenModel struct {
 	calibrated  bool
 	calibration pulsetp.Calibration
 
-	message []byte
-	lastErr error
+	message    []byte
+	outputPath string
+	saveErr    error
+	lastErr    error
 
 	start time.Time
 	done  bool
 	quit  bool
 }
 
-func newListenModel(ctx context.Context, l *pulsetp.Listener, port int) (listenModel, context.Context) {
+func newListenModel(ctx context.Context, l *pulsetp.Listener, port int, outputPath string) (listenModel, context.Context) {
 	runCtx, cancel := context.WithCancel(ctx)
 	sp := spinner.New()
 	sp.Spinner = spinner.Points
 	sp.Style = dimStyle
 	return listenModel{
-		port:    port,
-		events:  l.Run(runCtx),
-		cancel:  cancel,
-		spinner: sp,
-		phase:   pulsetp.PhaseWaiting,
-		start:   time.Now(),
+		port:       port,
+		events:     l.Run(runCtx),
+		cancel:     cancel,
+		spinner:    sp,
+		phase:      pulsetp.PhaseWaiting,
+		outputPath: outputPath,
+		start:      time.Now(),
 	}, runCtx
 }
 
@@ -96,6 +100,9 @@ func (m listenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case pulsetp.EventMessage:
 			m.message = ev.Message
 			m.done = true
+			if m.outputPath != "" && len(ev.Message) > 0 {
+				m.saveErr = os.WriteFile(m.outputPath, ev.Message, 0o644)
+			}
 			m.cancel()
 			return m, tea.Quit
 		}
@@ -155,14 +162,30 @@ func (m listenModel) View() string {
 	fmt.Fprintln(&b, strings.Join(m.glyphs, " "))
 	b.WriteString("\n")
 
-	fmt.Fprintln(&b, labelStyle.Render("decoded"))
-	content := string(m.message)
-	if content == "" {
-		content = dimStyle.Render("(waiting for data...)")
-	} else if !m.done {
-		content += dimStyle.Render("▌")
+	if m.outputPath != "" {
+		fmt.Fprintln(&b, labelStyle.Render("file"))
+		var content string
+		switch {
+		case m.saveErr != nil:
+			content = errorStyle.Render("save failed: " + m.saveErr.Error())
+		case m.done:
+			content = valueStyle.Render(fmt.Sprintf("saved %s to %s", humanBytes(len(m.message)), m.outputPath))
+		case len(m.message) == 0:
+			content = dimStyle.Render("(waiting for data...)")
+		default:
+			content = valueStyle.Render(fmt.Sprintf("%s received", humanBytes(len(m.message)))) + dimStyle.Render("▌")
+		}
+		fmt.Fprintln(&b, panelStyle.Render(content))
+	} else {
+		fmt.Fprintln(&b, labelStyle.Render("decoded"))
+		content := string(m.message)
+		if content == "" {
+			content = dimStyle.Render("(waiting for data...)")
+		} else if !m.done {
+			content += dimStyle.Render("▌")
+		}
+		fmt.Fprintln(&b, panelStyle.Render(content))
 	}
-	fmt.Fprintln(&b, panelStyle.Render(content))
 
 	if m.lastErr != nil {
 		b.WriteString("\n")
@@ -191,8 +214,8 @@ func (m listenModel) statusLine() string {
 	}
 }
 
-func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int) error {
-	model, _ := newListenModel(ctx, l, port)
+func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int, outputPath string) error {
+	model, _ := newListenModel(ctx, l, port, outputPath)
 	p := tea.NewProgram(model)
 	final, err := p.Run()
 	if err != nil {
@@ -205,6 +228,9 @@ func runListenTUI(ctx context.Context, l *pulsetp.Listener, port int) error {
 	}
 	if m.done && len(m.message) == 0 {
 		return fmt.Errorf("no message decoded (silence before any data arrived)")
+	}
+	if m.saveErr != nil {
+		return fmt.Errorf("could not save to %q: %w", m.outputPath, m.saveErr)
 	}
 	return nil
 }

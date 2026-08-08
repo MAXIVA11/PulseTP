@@ -43,6 +43,9 @@ taps the message back out.
 - **A CLI worth watching**: `pulsetp listen` renders the incoming rhythm
   live, colored dot by dot, with the decoded message filling in as bytes
   assemble.
+- **Files work too**: `--file` on `send` and `--output` on `listen` transmit
+  and save raw bytes instead of text, at exactly the same (deliberately
+  slow) bits-per-second as everything else.
 
 ### 🚀 Get it running
 
