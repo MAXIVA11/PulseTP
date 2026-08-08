@@ -20,12 +20,14 @@ func newListenCmd() *cobra.Command {
 		endSilence time.Duration
 		timeout    time.Duration
 		plain      bool
+		output     string
 	)
 
 	cmd := &cobra.Command{
-		Use:     "listen",
-		Short:   "Listen for an incoming pulse train and decode it",
-		Example: `  pulsetp listen --port 9000`,
+		Use:   "listen",
+		Short: "Listen for an incoming pulse train and decode it",
+		Example: `  pulsetp listen --port 9000
+  pulsetp listen --port 9000 --output ./received.png`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := pulsetp.DefaultConfig()
 			cfg.Threshold = threshold
@@ -47,9 +49,9 @@ func newListenCmd() *cobra.Command {
 			defer stop()
 
 			if plain || !isatty.IsTerminal(os.Stdout.Fd()) {
-				return runListenPlain(ctx, l, port)
+				return runListenPlain(ctx, l, port, output)
 			}
-			return runListenTUI(ctx, l, port)
+			return runListenTUI(ctx, l, port, output)
 		},
 	}
 
@@ -58,11 +60,12 @@ func newListenCmd() *cobra.Command {
 	cmd.Flags().DurationVar(&endSilence, "end-silence", 2*time.Second, "silence duration that marks end-of-message")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "give up if no pulses arrive within this long (0 = wait forever)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "disable the live TUI, print plain text as pulses decode")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "save the decoded bytes to this file instead of printing them as text (for receiving files)")
 
 	return cmd
 }
 
-func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int) error {
+func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int, output string) error {
 	fmt.Println(labelStyle.Render("listening  ") + valueStyle.Render(fmt.Sprintf("udp/%d", port)))
 	fmt.Println(dimStyle.Render("waiting for pulses... (ctrl+c to stop)"))
 	fmt.Println()
@@ -91,8 +94,16 @@ func runListenPlain(ctx context.Context, l *pulsetp.Listener, port int) error {
 				fmt.Println(errorStyle.Render("✗ no message decoded (silence before any data arrived)"))
 				return nil
 			}
-			fmt.Println(successStyle.Render("✓ message received") +
-				labelStyle.Render(fmt.Sprintf("  in %s", time.Since(start).Round(time.Millisecond))))
+			elapsed := labelStyle.Render(fmt.Sprintf("  in %s", time.Since(start).Round(time.Millisecond)))
+			if output != "" {
+				if err := os.WriteFile(output, ev.Message, 0o644); err != nil {
+					return fmt.Errorf("could not save to %q: %w", output, err)
+				}
+				fmt.Println(successStyle.Render("✓ file received") + elapsed)
+				fmt.Println(panelStyle.Render(valueStyle.Render(fmt.Sprintf("saved %s to %s", humanBytes(len(ev.Message)), output))))
+				return nil
+			}
+			fmt.Println(successStyle.Render("✓ message received") + elapsed)
 			fmt.Println(panelStyle.Render(valueStyle.Render(string(ev.Message))))
 			return nil
 		}
