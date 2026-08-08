@@ -42,20 +42,18 @@ taps the message back out.
 
 ### 🚀 Get it running
 
+**macOS/Linux:**
 ```bash
 go build -o bin/pulsetp ./cmd/pulsetp
+./bin/pulsetp listen --port 9000        # terminal 1
+./bin/pulsetp send --to localhost:9000 --message "hello"   # terminal 2
 ```
 
-In one terminal:
-
-```bash
-./bin/pulsetp listen --port 9000
+**Windows (PowerShell or cmd.exe):**
 ```
-
-In another:
-
-```bash
-./bin/pulsetp send --to localhost:9000 --message "hello"
+go build -o bin\pulsetp.exe .\cmd\pulsetp
+bin\pulsetp.exe listen --port 9000
+bin\pulsetp.exe send --to localhost:9000 --message "hello"
 ```
 
 Watch the rhythm arrive, and the message appear.
